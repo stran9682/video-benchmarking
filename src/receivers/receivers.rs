@@ -63,6 +63,10 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32) -> io::Resul
 
         let header = RTPHeader::deserialize(&mut data);
 
+        if  rtcp_sender_ntp.load(Relaxed) == 0 {
+            continue;
+        }         
+
         calculate_delay(
             time_since_epoch, 
             media_clock_rate, 
@@ -102,4 +106,6 @@ fn calculate_delay(
 
     let arrival_ns = arrival_time.as_nanos() as u64;
     let delay_ns = arrival_ns.saturating_sub(packet_send_time); 
+
+    println!("{}", delay_ns);
 }
