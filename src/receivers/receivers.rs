@@ -1,5 +1,5 @@
 use std::{
-    io, sync::{Arc, atomic::{AtomicU32, AtomicU64, Ordering::Relaxed}}, time::{Duration, SystemTime, UNIX_EPOCH}
+    io, sync::{Arc, atomic::{AtomicU32, AtomicU64, Ordering::Relaxed}}, time::{Duration, SystemTime}
 };
 
 use bytes::{BufMut, BytesMut};
@@ -86,25 +86,20 @@ fn calculate_delay(
 ) {
 
     // mostly from: 
-    // https://stackoverflow.com/questions/71296697/how-to-calculate-delay-in-rtp-packets-using-rtp-time-and-ntp-time-from-rtcp
+    // https://eceweb1.rutgers.edu/~marsic/books/CN/projects/wireshark/ws-project-4.html
 
-    let receiver_ntp= get_ntp_time(arrival_time);
-    let packet_send_time = ((rtp_header.timestamp - rtcp_sender_timestamp) / media_clock_rate) as u64 + rtcp_sender_ntp;
-    let delay = receiver_ntp - packet_send_time;
+    let unit_difference = rtp_header.timestamp.wrapping_sub(rtcp_sender_timestamp);
+    let delta_ns = unit_difference as u64 * 1_000_000_000 / media_clock_rate as u64;
+    
+    let ntp_secs = (rtcp_sender_ntp >> 32) as u64;
+    let ntp_frac = (rtcp_sender_ntp & 0xFFFFFFFF) as u64;
 
-    let seconds = (delay >> 32) as u64;
-    let fraction = (delay & 0xFFFFFFFF) as u64;
-    let nanos_per_frac = 1_000_000_000u64;
-    let nanoseconds = (fraction as u128 * nanos_per_frac as u128 >> 32) as u64;
-    let unix_seconds = seconds - NTP_TO_UNIX_EPOCH_SECS;
-    let delay_ns = unix_seconds * 1_000_000_000 + nanoseconds;
-}
+    let ntp_frac_ns = (ntp_frac * 1_000_000_000) >> 32;
 
-fn get_ntp_time(time_since_epoch: Duration) -> u64 {
-    let seconds = time_since_epoch.as_secs() + NTP_TO_UNIX_EPOCH_SECS;
-    let fraction =
-        ((time_since_epoch.subsec_micros() + 1) as f64 * (1u64 << 32) as f64 * 1.0e-6) as u32;
-    let ntp = seconds << 32 | (fraction as u64);
+    let packet_send_time = ((ntp_secs - NTP_TO_UNIX_EPOCH_SECS) * 1_000_000_000) 
+                                    + ntp_frac_ns 
+                                    + delta_ns;
 
-    ntp
+    let arrival_ns = arrival_time.as_nanos() as u64;
+    let delay_ns = arrival_ns.saturating_sub(packet_send_time); 
 }

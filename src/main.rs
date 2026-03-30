@@ -15,9 +15,9 @@ async fn network_loop() -> io::Result<()> {
     println!("Starting up a listener for benchmarking");
     let local_ip = local_ip().unwrap();
 
-    let video_socket = UdpSocket::bind(local_ip.to_string() + ":0").await?;
-    let audio_socket = UdpSocket::bind(local_ip.to_string() + ":0").await?;
-
+    let video_socket = UdpSocket::bind(local_ip.to_string() + ":8080").await?;
+    let audio_socket = UdpSocket::bind(local_ip.to_string() + ":8082").await?;
+ 
     let audio_addr = audio_socket.local_addr()?;
     let video_addr = video_socket.local_addr()?;
 

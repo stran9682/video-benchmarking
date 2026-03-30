@@ -15,7 +15,7 @@ pub async fn run_signaling_server(
     ssrc: u32,
 ) -> io::Result<()> {
     let local_ip = local_ip().unwrap();
-    let listener = TcpListener::bind(local_ip.to_string() + ":0")
+    let listener = TcpListener::bind(local_ip.to_string() + ":8084")
         .await
         .unwrap();
 
