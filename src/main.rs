@@ -2,15 +2,13 @@ use std::{io};
 
 use local_ip_address::local_ip;
 use tokio::net::UdpSocket;
-use video_server::{ receivers::{receivers::{rtp_audio_receiver, rtp_frame_receiver}, signalling::run_signaling_server}};
+use video_server::receivers::{receivers::rtp_receiver, signalling::run_signaling_server};
 
 #[tokio::main]
 async fn main() {
-    tokio::spawn(async move {
-        if let Err(e) = network_loop().await {
-            eprintln!("{}", e)
-        }
-    });
+    if let Err(e) = network_loop().await {
+        eprintln!("{}", e)
+    }
 }
 
 async fn network_loop() -> io::Result<()> {
@@ -22,17 +20,19 @@ async fn network_loop() -> io::Result<()> {
 
     let audio_addr = audio_socket.local_addr()?;
     let video_addr = video_socket.local_addr()?;
+
     tokio::spawn(async move {
-        run_signaling_server(audio_addr, video_addr, 0).await
+        rtp_receiver(audio_socket, 48_000).await
     });
 
     tokio::spawn(async move {
-        rtp_audio_receiver(audio_socket, 48_000).await
+        rtp_receiver(video_socket, 90_000).await
     });
 
-    tokio::spawn(async move {
-        rtp_frame_receiver(video_socket, 90_000).await
-    });
+    run_signaling_server(audio_addr, video_addr, 0)
+        .await.map_err(|e| 
+            io::Error::new(io::ErrorKind::ConnectionAborted, 
+                format!("Signalling failure: {}", e)))?;
 
     Ok(())
 }

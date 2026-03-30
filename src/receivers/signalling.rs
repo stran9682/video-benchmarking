@@ -1,9 +1,12 @@
 use std::{io, net::SocketAddr};
 
 use local_ip_address::local_ip;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+};
 
-use crate::{receivers::{ServerArgs, StreamTypeWithArgs}};
+use crate::receivers::{ServerArgs, StreamTypeWithArgs};
 
 /// inject an instance of a peer manager for the server to manage
 pub async fn run_signaling_server(
@@ -11,13 +14,12 @@ pub async fn run_signaling_server(
     video_addr: SocketAddr,
     ssrc: u32,
 ) -> io::Result<()> {
-
     let local_ip = local_ip().unwrap();
     let listener = TcpListener::bind(local_ip.to_string() + ":0")
         .await
         .unwrap();
 
-    println!("{}", listener.local_addr().unwrap());
+    println!("Signalling running on: {}", listener.local_addr().unwrap());
 
     loop {
         let (mut socket, client_addr) = match listener.accept().await {
@@ -31,9 +33,10 @@ pub async fn run_signaling_server(
         println!("Request from {}", client_addr.to_string());
 
         let audio_addr = audio_addr.clone();
-        let video_addr= video_addr.clone();
+        let video_addr = video_addr.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_signaling_client(&mut socket, audio_addr, video_addr, ssrc).await {
+            if let Err(e) = handle_signaling_client(&mut socket, audio_addr, video_addr, ssrc).await
+            {
                 eprintln!("Signaling error with {}: {}", client_addr, e);
             }
         });
@@ -41,7 +44,7 @@ pub async fn run_signaling_server(
 }
 
 async fn handle_signaling_client(
-    socket: &mut TcpStream,  
+    socket: &mut TcpStream,
     audio_addr: SocketAddr,
     video_addr: SocketAddr,
     ssrc: u32,
@@ -61,14 +64,19 @@ async fn handle_signaling_client(
         )
     })?;
 
-    let (request_socket, benchmark_type)  = match request.stream_type {
+    let (request_socket, benchmark_type) = match request.stream_type {
         StreamTypeWithArgs::Audio {
             sample_rate: _,
             channels: _,
         } => (audio_addr, StreamTypeWithArgs::BenchmarkAudio),
-        StreamTypeWithArgs::Video { pps: _, sps: _ } => (video_addr, StreamTypeWithArgs::BenchmarkVideo),
+        StreamTypeWithArgs::Video { pps: _, sps: _ } => {
+            (video_addr, StreamTypeWithArgs::BenchmarkVideo)
+        }
         _ => {
-            return Err(io::Error::new(std::io::ErrorKind::NetworkUnreachable, "Should not be receiving from another benchmarker"))
+            return Err(io::Error::new(
+                std::io::ErrorKind::NetworkUnreachable,
+                "Should not be receiving from another benchmarker",
+            ));
         }
     };
 
@@ -77,10 +85,12 @@ async fn handle_signaling_client(
         local_rtp_address: request_socket.to_string(),
         stream_type: benchmark_type,
         peer_signalling_addresses: Vec::new(),
-        ssrc
+        ssrc,
     };
 
-    socket.write_all(&serde_json::to_string(&response)?.as_bytes()).await?;
+    socket
+        .write_all(&serde_json::to_string(&response)?.as_bytes())
+        .await?;
 
     Ok(())
 }
