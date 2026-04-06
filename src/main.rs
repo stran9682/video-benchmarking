@@ -22,12 +22,12 @@ async fn network_loop() -> io::Result<()> {
     let video_addr = video_socket.local_addr()?;
 
     tokio::spawn(async move {
-        rtp_receiver(audio_socket, 48_000).await
+        rtp_receiver(audio_socket, 48_000, video_server::StreamType::Audio).await
     });
 
-    // tokio::spawn(async move {
-    //     rtp_receiver(video_socket, 90_000).await
-    // });
+    tokio::spawn(async move {
+        rtp_receiver(video_socket, 90_000, video_server::StreamType::Video).await
+    });
 
     run_signaling_server(audio_addr, video_addr, 0)
         .await.map_err(|e| 

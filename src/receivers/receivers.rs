@@ -6,7 +6,7 @@ use csv::Writer;
 use bytes::{BufMut, BytesMut};
 use tokio::net::UdpSocket;
 
-use crate::rtp::{rtcp::{PacketType, RTCPHeader, SenderReport}, rtp_header::RTPHeader};
+use crate::{StreamType, rtp::{rtcp::{PacketType, RTCPHeader, SenderReport}, rtp_header::RTPHeader}};
 
 pub async fn rtcp_receiver(
     socket: UdpSocket, 
@@ -37,7 +37,7 @@ pub async fn rtcp_receiver(
     }
 }
 
-pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32) -> io::Result<()> {
+pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32, stream_type: StreamType) -> io::Result<()> {
     let rtcp_sender_ntp = Arc::new(AtomicU64::new(0));
     let rtcp_sender_timestamp = Arc::new(AtomicU32::new(0));
 
@@ -54,7 +54,12 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32) -> io::Resul
     let mut buffer = [0u8; 1500];
     // let mut last_seen_timestamp: u32 = 0;
 
-    let mut wtr = Writer::from_path("data.csv")?;
+    let file_name = match stream_type {
+        StreamType::Video => "video_receive_data.csv",
+        StreamType::Audio => "audio_receive_data.csv"
+    };
+
+    let mut wtr = Writer::from_path(file_name)?;
     let mut samples = 0;
 
     loop {
