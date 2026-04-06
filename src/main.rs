@@ -25,9 +25,9 @@ async fn network_loop() -> io::Result<()> {
         rtp_receiver(audio_socket, 48_000).await
     });
 
-    tokio::spawn(async move {
-        rtp_receiver(video_socket, 90_000).await
-    });
+    // tokio::spawn(async move {
+    //     rtp_receiver(video_socket, 90_000).await
+    // });
 
     run_signaling_server(audio_addr, video_addr, 0)
         .await.map_err(|e| 

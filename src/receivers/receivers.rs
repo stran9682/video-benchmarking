@@ -51,6 +51,7 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32) -> io::Resul
     });
 
     let mut buffer = [0u8; 1500];
+    // let mut last_seen_timestamp: u32 = 0;
 
     loop {
         let (bytes_read, _) = socket.recv_from(&mut buffer).await?;
@@ -63,18 +64,25 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32) -> io::Resul
 
         let header = RTPHeader::deserialize(&mut data);
 
-        if  rtcp_sender_ntp.load(Relaxed) == 0 {
-            continue;
-        }         
+        println!("{}: {}", header.timestamp, time_since_epoch.as_nanos());
 
-        calculate_delay(
-            time_since_epoch, 
-            media_clock_rate, 
-            data, 
-            &header, 
-            rtcp_sender_ntp.load(Relaxed), 
-            rtcp_sender_timestamp.load(Relaxed)
-        );
+        // let ntp = rtcp_sender_ntp.load(Relaxed);
+        // let timestamp = rtcp_sender_timestamp.load(Relaxed);
+
+        // if  ntp == 0 || last_seen_timestamp == header.timestamp {
+        //     continue;
+        // }
+
+        // last_seen_timestamp = header.timestamp;
+
+        // let delay_ns = calculate_delay(
+        //     time_since_epoch, 
+        //     media_clock_rate, 
+        //     data, 
+        //     &header, 
+        //     ntp, 
+        //     timestamp
+        // );
     }
 }
 
@@ -87,7 +95,7 @@ fn calculate_delay(
     rtp_header: &RTPHeader,
     rtcp_sender_ntp: u64, 
     rtcp_sender_timestamp: u32
-) {
+) -> u64 {
 
     // mostly from: 
     // https://eceweb1.rutgers.edu/~marsic/books/CN/projects/wireshark/ws-project-4.html
@@ -107,5 +115,13 @@ fn calculate_delay(
     let arrival_ns = arrival_time.as_nanos() as u64;
     let delay_ns = arrival_ns.saturating_sub(packet_send_time); 
 
-    println!("{}", delay_ns);
+    // println!("RTP Diff (ticks): {}", unit_difference);
+    // println!("Delta (ms): {}", delta_ns as f64 / 1_000_000.0);
+    // println!("NTP Base (secs): {}", ntp_secs);
+    // println!("NTP Frac: {}", ntp_frac_ns);
+    // println!("Packet Send Time (Unix ns): {}", packet_send_time);
+    // println!("Arrival (Unix ns): {}", arrival_ns);
+    println!("{}: {}", rtp_header.timestamp, packet_send_time);
+
+    delay_ns
 }
