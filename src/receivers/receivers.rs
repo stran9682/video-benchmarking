@@ -2,6 +2,7 @@ use std::{
     io, sync::{Arc, atomic::{AtomicU32, AtomicU64, Ordering::Relaxed}}, time::{Duration, SystemTime}
 };
 
+use csv::Writer;
 use bytes::{BufMut, BytesMut};
 use tokio::net::UdpSocket;
 
@@ -53,6 +54,9 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32) -> io::Resul
     let mut buffer = [0u8; 1500];
     // let mut last_seen_timestamp: u32 = 0;
 
+    let mut wtr = Writer::from_path("data.csv")?;
+    let mut samples = 0;
+
     loop {
         let (bytes_read, _) = socket.recv_from(&mut buffer).await?;
 
@@ -64,7 +68,12 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32) -> io::Resul
 
         let header = RTPHeader::deserialize(&mut data);
 
-        println!("{}: {}", header.timestamp, time_since_epoch.as_nanos());
+        if samples < 3500 {
+            wtr.write_record(&[header.ssrc.to_string(), header.timestamp.to_string(), time_since_epoch.as_nanos().to_string()])?;
+            samples += 1;
+        } else {
+            wtr.flush()?;
+        }
 
         // let ntp = rtcp_sender_ntp.load(Relaxed);
         // let timestamp = rtcp_sender_timestamp.load(Relaxed);
@@ -121,7 +130,7 @@ fn calculate_delay(
     // println!("NTP Frac: {}", ntp_frac_ns);
     // println!("Packet Send Time (Unix ns): {}", packet_send_time);
     // println!("Arrival (Unix ns): {}", arrival_ns);
-    println!("{}: {}", rtp_header.timestamp, packet_send_time);
+    // println!("{}: {}", rtp_header.timestamp, packet_send_time);
 
     delay_ns
 }
