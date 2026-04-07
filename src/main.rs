@@ -1,8 +1,12 @@
-use std::{io};
+use std::{
+    io,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    str::FromStr,
+};
 
 use local_ip_address::local_ip;
-use tokio::net::UdpSocket;
-use video_server::receivers::{receivers::rtp_receiver, signalling::run_signaling_server};
+use video_server::quic::make_server_endpoint;
+use video_server::receivers::signalling::run_signaling_server;
 
 #[tokio::main]
 async fn main() {
@@ -14,25 +18,28 @@ async fn main() {
 async fn network_loop() -> io::Result<()> {
     println!("Starting up a listener for benchmarking");
     let local_ip = local_ip().unwrap();
+    let addr = Ipv4Addr::from_str(&local_ip.to_string()).unwrap();
 
-    let video_socket = UdpSocket::bind(local_ip.to_string() + ":8080").await?;
-    let audio_socket = UdpSocket::bind(local_ip.to_string() + ":8082").await?;
- 
-    let audio_addr = audio_socket.local_addr()?;
-    let video_addr = video_socket.local_addr()?;
+    let video_socket = SocketAddr::new(IpAddr::V4(addr), 8080);
+    let audio_socket = SocketAddr::new(IpAddr::V4(addr), 8082);
 
-    tokio::spawn(async move {
-        rtp_receiver(audio_socket, 48_000, video_server::StreamType::Audio).await
-    });
+    let (video_endpoint, video_server_cert) = make_server_endpoint(video_socket, &0)?;
+    let (audio_endpoint, audio_server_cert) = make_server_endpoint(audio_socket, &0)?;
 
-    tokio::spawn(async move {
-        rtp_receiver(video_socket, 90_000, video_server::StreamType::Video).await
-    });
-
-    run_signaling_server(audio_addr, video_addr, 0)
-        .await.map_err(|e| 
-            io::Error::new(io::ErrorKind::ConnectionAborted, 
-                format!("Signalling failure: {}", e)))?;
+    run_signaling_server(
+        audio_endpoint, 
+        audio_server_cert, 
+        video_endpoint, 
+        video_server_cert, 
+        0
+    )
+        .await
+        .map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                format!("Signalling failure: {}", e),
+            )
+        })?;
 
     Ok(())
 }

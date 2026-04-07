@@ -19,4 +19,5 @@ struct ServerArgs {
     ssrc: u32,
     stream_type: StreamTypeWithArgs,
     peer_signalling_addresses: Vec<String>,
+    cert: Vec<u8>,
 }

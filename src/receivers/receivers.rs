@@ -1,17 +1,30 @@
 use std::{
-    io, sync::{Arc, atomic::{AtomicU32, AtomicU64, Ordering::Relaxed}}, time::{Duration, Instant, SystemTime}
+    io,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, AtomicU64, Ordering::Relaxed},
+    },
+    time::{Duration, Instant, SystemTime},
 };
 
-use csv::Writer;
 use bytes::{BufMut, BytesMut};
+use csv::Writer;
+use quinn::Connection;
 use tokio::net::UdpSocket;
 
-use crate::{StreamType, rtp::{rtcp::{PacketType, RTCPHeader, SenderReport}, rtp_header::RTPHeader}};
+use crate::{
+    StreamType,
+    rtp::{
+        rtcp::{PacketType, RTCPHeader, SenderReport},
+        rtp_header::RTPHeader,
+    },
+};
 
 pub async fn rtcp_receiver(
-    socket: UdpSocket, 
-    rtcp_sender_ntp: Arc<AtomicU64>, 
-    rtcp_sender_timestamp: Arc<AtomicU32>
+    socket: UdpSocket,
+    rtcp_sender_ntp: Arc<AtomicU64>,
+    rtcp_sender_timestamp: Arc<AtomicU32>,
 ) -> io::Result<()> {
     let mut buffer = [0u8; 1500];
 
@@ -37,44 +50,59 @@ pub async fn rtcp_receiver(
     }
 }
 
-pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32, stream_type: StreamType) -> io::Result<()> {
+pub async fn rtp_receiver(
+    socket: Connection,
+    stream_type: StreamType,
+    local_addr: SocketAddr,
+) -> io::Result<()> {
     let rtcp_sender_ntp = Arc::new(AtomicU64::new(0));
     let rtcp_sender_timestamp = Arc::new(AtomicU32::new(0));
 
     // RTCP stuff, don't mind the mess
-    let addr = format!("{}:{}", socket.local_addr()?.ip(), socket.local_addr()?.port() + 1);
+    let addr = format!("{}:{}", local_addr.ip(), local_addr.port() + 1);
     let rtcp_socket = UdpSocket::bind(addr).await?;
     let ntp_clone = Arc::clone(&rtcp_sender_ntp);
     let timestamp_clone = Arc::clone(&rtcp_sender_timestamp);
 
-    tokio::spawn(async move {
-        rtcp_receiver(rtcp_socket, ntp_clone, timestamp_clone).await
-    });
+    tokio::spawn(async move { rtcp_receiver(rtcp_socket, ntp_clone, timestamp_clone).await });
 
-    let mut buffer = [0u8; 1500];
     // let mut last_seen_timestamp: u32 = 0;
 
     let file_name = match stream_type {
         StreamType::Video => "video_receive_data.csv",
-        StreamType::Audio => "audio_receive_data.csv"
+        StreamType::Audio => "audio_receive_data.csv",
     };
 
     let mut wtr = Writer::from_path(file_name)?;
     let now = Instant::now();
 
     loop {
-        let (bytes_read, _) = socket.recv_from(&mut buffer).await?;
+        let mut data = match socket.read_datagram().await {
+            Ok(data) => data,
+            Err(e) => {
+                let err = format!(
+                    "Audio receiver of {} terminated {}",
+                    socket.remote_address(),
+                    e
+                );
+
+                eprintln!("{}", err);
+
+                return Err(io::Error::new(io::ErrorKind::ConnectionAborted, err));
+            }
+        };
 
         let now = SystemTime::now();
         let time_since_epoch = now.duration_since(SystemTime::UNIX_EPOCH).unwrap();
 
-        let mut data = BytesMut::with_capacity(bytes_read);
-        data.put_slice(&buffer[..bytes_read]);
-
         let header = RTPHeader::deserialize(&mut data);
 
         if now.elapsed().unwrap().as_secs() < 10 {
-            wtr.write_record(&[header.ssrc.to_string(), header.timestamp.to_string(), time_since_epoch.as_nanos().to_string()])?;
+            wtr.write_record(&[
+                header.ssrc.to_string(),
+                header.sequence_number.to_string(),
+                time_since_epoch.as_nanos().to_string(),
+            ])?;
         } else {
             wtr.flush()?;
         }
@@ -89,44 +117,41 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32, stream_type:
         // last_seen_timestamp = header.timestamp;
 
         // let delay_ns = calculate_delay(
-        //     time_since_epoch, 
-        //     media_clock_rate, 
-        //     data, 
-        //     &header, 
-        //     ntp, 
+        //     time_since_epoch,
+        //     media_clock_rate,
+        //     data,
+        //     &header,
+        //     ntp,
         //     timestamp
         // );
     }
 }
 
-const NTP_TO_UNIX_EPOCH_SECS: u64 = 2_208_988_800;
-
 fn calculate_delay(
     arrival_time: Duration,
     media_clock_rate: u32,
-    data: BytesMut,
     rtp_header: &RTPHeader,
-    rtcp_sender_ntp: u64, 
-    rtcp_sender_timestamp: u32
+    rtcp_sender_ntp: u64,
+    rtcp_sender_timestamp: u32,
 ) -> u64 {
+    const NTP_TO_UNIX_EPOCH_SECS: u64 = 2_208_988_800;
 
-    // mostly from: 
+    // mostly from:
     // https://eceweb1.rutgers.edu/~marsic/books/CN/projects/wireshark/ws-project-4.html
 
     let unit_difference = rtp_header.timestamp.wrapping_sub(rtcp_sender_timestamp);
     let delta_ns = unit_difference as u64 * 1_000_000_000 / media_clock_rate as u64;
-    
+
     let ntp_secs = (rtcp_sender_ntp >> 32) as u64;
     let ntp_frac = (rtcp_sender_ntp & 0xFFFFFFFF) as u64;
 
     let ntp_frac_ns = (ntp_frac * 1_000_000_000) >> 32;
 
-    let packet_send_time = ((ntp_secs - NTP_TO_UNIX_EPOCH_SECS) * 1_000_000_000) 
-                                    + ntp_frac_ns 
-                                    + delta_ns;
+    let packet_send_time =
+        ((ntp_secs - NTP_TO_UNIX_EPOCH_SECS) * 1_000_000_000) + ntp_frac_ns + delta_ns;
 
     let arrival_ns = arrival_time.as_nanos() as u64;
-    let delay_ns = arrival_ns.saturating_sub(packet_send_time); 
+    let delay_ns = arrival_ns.saturating_sub(packet_send_time);
 
     // println!("RTP Diff (ticks): {}", unit_difference);
     // println!("Delta (ms): {}", delta_ns as f64 / 1_000_000.0);
