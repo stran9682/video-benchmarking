@@ -60,7 +60,6 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32, stream_type:
     };
 
     let mut wtr = Writer::from_path(file_name)?;
-    let now = Instant::now();
 
     loop {
         let (bytes_read, _) = socket.recv_from(&mut buffer).await?;
@@ -73,11 +72,12 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32, stream_type:
 
         let header = RTPHeader::deserialize(&mut data);
 
-        if now.elapsed().unwrap().as_secs() < 10 {
-            wtr.write_record(&[header.ssrc.to_string(), header.timestamp.to_string(), time_since_epoch.as_nanos().to_string()])?;
-        } else {
-            wtr.flush()?;
-        }
+        wtr.write_record(&[
+            header.ssrc.to_string(), 
+            header.sequence_number.to_string(), 
+            time_since_epoch.as_nanos().to_string()
+        ])?;
+
 
         // let ntp = rtcp_sender_ntp.load(Relaxed);
         // let timestamp = rtcp_sender_timestamp.load(Relaxed);
