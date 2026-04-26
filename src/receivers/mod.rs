@@ -7,9 +7,7 @@ pub mod signalling;
 #[serde(tag = "type")]
 enum StreamTypeWithArgs {
     Video { pps: Vec<u8>, sps: Vec<u8> },
-    Audio { sample_rate: f64, channels: u32 },
-    BenchmarkAudio,
-    BenchmarkVideo,
+    Audio { sample_rate: f64, channels: u32 }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

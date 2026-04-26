@@ -64,26 +64,19 @@ async fn handle_signaling_client(
         )
     })?;
 
-    let (request_socket, benchmark_type) = match request.stream_type {
-        StreamTypeWithArgs::Audio {
-            sample_rate: _,
-            channels: _,
-        } => (audio_addr, StreamTypeWithArgs::BenchmarkAudio),
+    let request_socket= match request.stream_type {
+        StreamTypeWithArgs::Audio {sample_rate: _, channels: _,} => {
+            audio_addr
+        },
         StreamTypeWithArgs::Video { pps: _, sps: _ } => {
-            (video_addr, StreamTypeWithArgs::BenchmarkVideo)
-        }
-        _ => {
-            return Err(io::Error::new(
-                std::io::ErrorKind::NetworkUnreachable,
-                "Should not be receiving from another benchmarker",
-            ));
+            video_addr
         }
     };
 
     let response = ServerArgs {
         signaling_address: socket.local_addr().unwrap().to_string(),
         local_rtp_address: request_socket.to_string(),
-        stream_type: benchmark_type,
+        stream_type: request.stream_type,
         peer_signalling_addresses: Vec::new(),
         ssrc,
     };

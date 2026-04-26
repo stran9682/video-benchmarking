@@ -1,5 +1,11 @@
 use std::{
-    io, sync::{Arc, atomic::{AtomicU32, AtomicU64, Ordering::Relaxed}}, time::{Duration, Instant, SystemTime}
+    io,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, AtomicU64, Ordering::Relaxed},
+    },
+    time::Duration,
 };
 
 use csv::Writer;
@@ -51,33 +57,31 @@ pub async fn rtp_receiver(socket: UdpSocket, media_clock_rate: u32, stream_type:
         rtcp_receiver(rtcp_socket, ntp_clone, timestamp_clone).await
     });
 
-    let mut buffer = [0u8; 1500];
     // let mut last_seen_timestamp: u32 = 0;
 
-    let file_name = match stream_type {
-        StreamType::Video => "video_receive_data.csv",
-        StreamType::Audio => "audio_receive_data.csv"
-    };
+    // let file_name = match stream_type {
+    //     StreamType::Video => "video_receive_data.csv",
+    //     StreamType::Audio => "audio_receive_data.csv",
+    // };
 
-    let mut wtr = Writer::from_path(file_name)?;
+    // let mut wtr = Writer::from_path(file_name)?;
+    let mut buffer = BytesMut::with_capacity(1500);
+    let mut socket_buffer =  [0u8; 1500];
 
     loop {
-        let (bytes_read, _) = socket.recv_from(&mut buffer).await?;
+        let (bytes_read, addr) = socket.recv_from(&mut socket_buffer).await?;
 
-        let now = SystemTime::now();
-        let time_since_epoch = now.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+        let mut slice = &socket_buffer[..bytes_read];
 
-        let mut data = BytesMut::with_capacity(bytes_read);
-        data.put_slice(&buffer[..bytes_read]);
+        let mut header = RTPHeader::deserialize(&mut slice);
+        header.ssrc = 0;
 
-        let header = RTPHeader::deserialize(&mut data);
+        header.serialize(&mut buffer);
+        buffer.put(slice);
+        let packet = buffer.split().freeze();
 
-        wtr.write_record(&[
-            header.ssrc.to_string(), 
-            header.sequence_number.to_string(), 
-            time_since_epoch.as_nanos().to_string()
-        ])?;
-
+        socket.send_to(&packet, addr).await?;
+        buffer.reserve(1500);
 
         // let ntp = rtcp_sender_ntp.load(Relaxed);
         // let timestamp = rtcp_sender_timestamp.load(Relaxed);

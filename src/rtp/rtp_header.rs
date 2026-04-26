@@ -41,8 +41,7 @@ pub struct RTPHeader {
 // }
 
 impl RTPHeader {
-    pub fn serialize(&self) -> BytesMut {
-        let mut buf = BytesMut::with_capacity(1500);
+    pub fn serialize(&self, buf: &mut BytesMut) {
 
         // first byte
         let mut b0 = (self.version << 6) | 0 as u8; // this should be set to the CSRC length, but i've removed it for now
@@ -72,11 +71,9 @@ impl RTPHeader {
         // for csrc in &self.csrc {
         //     buf.put_u32(*csrc);
         // }
-
-        buf
     }
 
-    pub fn deserialize(packet: &mut BytesMut) -> RTPHeader {
+    pub fn deserialize<B: Buf>(packet: &mut B) -> RTPHeader {
         let b0 = packet.get_u8();
         let version = b0 >> 6 & 0x3;
         let padding = (b0 >> 5 & 0x1) > 0;
