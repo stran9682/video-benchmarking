@@ -49,15 +49,17 @@ async fn handle_signaling_client(
     video_addr: SocketAddr,
     ssrc: u32,
 ) -> io::Result<()> {
-    let mut buffer = [0; 1500];
+    let mut len_buf =[0u8; 4];
+    socket.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    println!("packet size: {}", len);
 
-    let bytes_read = socket.read(&mut buffer).await?;
-    if bytes_read == 0 {
-        return Ok(());
-    }
+    let mut buffer = vec![0u8; len];
+    socket.read_exact(&mut buffer).await?;
+    
 
     // parsing the request
-    let request: ServerArgs = serde_json::from_slice(&buffer[..bytes_read]).map_err(|e| {
+    let request: ServerArgs = serde_json::from_slice(&buffer[..]).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Could not parse request. {}", e),
