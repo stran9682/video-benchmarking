@@ -5,7 +5,7 @@ use std::{
         Arc,
         atomic::{AtomicU32, AtomicU64, Ordering::Relaxed},
     },
-    time::{Duration, Instant, SystemTime},
+    time::Duration,
 };
 
 use bytes::{BufMut, BytesMut};
@@ -68,12 +68,13 @@ pub async fn rtp_receiver(
 
     // let mut last_seen_timestamp: u32 = 0;
 
-    let file_name = match stream_type {
-        StreamType::Video => "video_receive_data.csv",
-        StreamType::Audio => "audio_receive_data.csv",
-    };
+    // let file_name = match stream_type {
+    //     StreamType::Video => "video_receive_data.csv",
+    //     StreamType::Audio => "audio_receive_data.csv",
+    // };
 
-    let mut wtr = Writer::from_path(file_name)?;
+    // let mut wtr = Writer::from_path(file_name)?;
+    let mut buffer = BytesMut::with_capacity(1500);
 
     loop {
         let mut data = match socket.read_datagram().await {
@@ -91,17 +92,15 @@ pub async fn rtp_receiver(
             }
         };
 
-        let now = SystemTime::now();
-        let time_since_epoch = now.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+        let mut header = RTPHeader::deserialize(&mut data);
+        header.ssrc = 0;
 
-        let header = RTPHeader::deserialize(&mut data);
+        header.serialize(&mut buffer);
+        buffer.put(data);
+        let packet = buffer.split().freeze();
 
-        wtr.write_record(&[
-            header.ssrc.to_string(),
-            header.sequence_number.to_string(),
-            time_since_epoch.as_nanos().to_string(),
-        ])?;
-   
+        socket.send_datagram_wait(packet).await.map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
+        buffer.reserve(1500);
 
         // let ntp = rtcp_sender_ntp.load(Relaxed);
         // let timestamp = rtcp_sender_timestamp.load(Relaxed);

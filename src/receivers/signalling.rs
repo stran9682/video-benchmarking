@@ -66,22 +66,16 @@ pub async fn run_signaling_server(
                 )
             })?;
 
-            let (request_socket, benchmark_type, cert) = match request.stream_type {
+            let (request_socket, cert) = match request.stream_type {
                 StreamTypeWithArgs::Audio {sample_rate: _, channels: _,} => {
-                    (audio_addr, StreamTypeWithArgs::BenchmarkAudio, audio_cert)
+                    (audio_addr, audio_cert)
                 },
                 StreamTypeWithArgs::Video { pps: _, sps: _ } => {
-                    (video_addr, StreamTypeWithArgs::BenchmarkVideo, video_cert)
-                }
-                _ => {
-                    return Err(io::Error::new(
-                        std::io::ErrorKind::NetworkUnreachable,
-                        "Should not be receiving from another benchmarker",
-                    ));
+                    (video_addr, video_cert)
                 }
             };
 
-            if let Err(e) = handle_signaling_client(&mut socket, request_socket, ssrc, benchmark_type, cert.to_vec()).await
+            if let Err(e) = handle_signaling_client(&mut socket, request_socket, ssrc, request.stream_type, cert.to_vec()).await
             {
                 eprintln!("Signaling error with {}: {}", client_addr, e);
                 return Err(e)
